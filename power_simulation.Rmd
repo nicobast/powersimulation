@@ -1,0 +1,243 @@
+---
+title: "power_simulation_cross_lagged_panel"
+author: "Nico Bast"
+date: "`r Sys.Date()`"
+output: 
+  html_document:
+    toc: true
+    toc_float: true
+    number_sections: true
+    theme: cerulean
+    code_folding: hide
+editor_options: 
+  chunk_output_type: console
+---
+
+Power in the statistical models of the Emmy-Noether Grant 2024:
+- cross-lagged panel model (task 3.1)
+- linear mixed model (task 1.1)
+- linear model (task 2.1)
+- structural equation model (task 2.2)
+- bivariate latent growth model with time-invariant covariate (task 3.2)
+
+
+#power simulation for random intercept cross-lagged panel models
+
+- [reference link](https://www.tandfonline.com/doi/full/10.1080/10705511.2022.2122467)
+- [vignette](https://cloud.r-project.org/web/packages/powRICLPM/vignettes/powRICLPM.html)
+
+```{r setup power 1, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+#install.packages("powRICLPM")
+require(powRICLPM) #power simulation
+require(progressr) #progress bar during simulation
+require(furrr) #parallel processing
+
+# see: https://cloud.r-project.org/web/packages/powRICLPM/vignettes/powRICLPM.html
+
+# Check how many cores are available and determine a lower number of cores in parallel processing
+core_offset<-4 #should be at least 1
+parallel_cores<-future::availableCores()-core_offset #cpu core used in parallel processing
+
+```
+
+## 1. Define simulation parameters
+
+- Phi: Standardized autoregressive and cross-lagged effects for the within-unit components of the model. These values are collected in a matrix, with columns representing predictors and rows representing outcomes.
+- within_cor: A correlation for the within-unit components.
+- ICC: The proportion of variance at the between-unit level (relative to the total variance).
+- RI_cor: The correlation between the random intercepts.
+
+If you are unsure if you have specified the Phi matrix as intended, you can use the check_Phi() function to give you a summary of how the effects in your Phi are interpreted.
+
+```{r values}
+
+Phi <- matrix(c(.7, .1, .2, .7), ncol = 2, byrow = T)
+# The .2 refers to our standardized cross-lagged effect of interest
+check_Phi(Phi)
+
+within_cor <- 0.3
+ICC <- 0.5
+RI_cor <- 0.3
+
+```
+## 2. Perform power simulation
+
+```{r sim, warnings=FALSE}
+
+# Plan powRICLPM analysis to run on 1 core less than number of available cores
+plan(multisession, workers = parallel_cores) # For the case of 8 available cores
+
+#power simulation with progress bar
+with_progress({ # Subscribe to progress updates
+
+output <- powRICLPM(
+  
+  target_power = 0.8,
+  
+  search_lower = 100, #sample size min
+  search_upper = 400, #sample size max
+  search_step = 50, # step increase
+  
+  #time_points = c(3, 4, 5),
+  time_points = 5, # timepoints used
+  
+  #taken from parameter definition above
+  ICC = ICC,
+  RI_cor = RI_cor, 
+  Phi = Phi,
+  
+  within_cor = 0.3, #default medium size
+  
+  reps = 1000 #number of monte carlo simulations
+  
+)
+
+})
+
+# Revert back to sequential execution of code 
+plan(sequential)
+
+```
+## 3. inspect output
+
+```{r output}
+
+output
+
+summary(output)
+
+# cross-lagged effect in different simulations
+summary(output, parameter = "wB2~wA1") 
+plot(output, parameter = "wB2~wA1")
+
+```
+
+# Power in linear mixed model (task 1.1)
+
+```{r setup power 2}
+require(lme4)
+require(lmerTest)
+require(simr)
+
+```
+
+## define parameters
+
+```{r define parameters LMM}
+
+#full simulation of data - linear mixed model
+n_size<-90
+k_size<-100 #number of trials --> auditory oddball: 
+subj <- factor(1:n_size) 
+trial_id <- 1:k_size #remains integer variable
+condition <- c("standard", "oddball")
+
+
+subj_full <- rep(subj, k_size)
+trial_full <- rep(trial_id, each=n_size)
+oddball_likelihood<-0.2
+condition_full <- rep(condition, times=c(k_size*n_size*(1-oddball_likelihood),k_size*n_size*oddball_likelihood))
+#group_full <- rep(group, k_size*n_size/2)
+
+covars <- data.frame(id=subj_full, trial=trial_full, condition=condition_full)
+
+#define effect parameters based on literature or experience
+#-->exracted from visuospatial_JCCP and fasttask models
+
+#FIXED EFFECTS: intercept, condition
+fixed <- c(0.1, 0.3)
+### --> interested fixed effect of condition d = 0.3
+
+## Random intercepts
+rand <- list(0.1, 0.1)
+
+## residual variance
+res <- 1
+
+```
+
+## create a model
+
+```{r create model}
+
+#CREATE MODEL
+model <- makeLmer(y ~ condition + (1|id) + (1|trial), fixef=fixed, VarCorr=rand, sigma=res, data=covars)
+
+summary(model)
+
+```
+
+## simulate model
+
+```{r simulate LMM}
+
+##SIMULATE
+#sim_treat <- powerSim(model, nsim=10, test = fcompare(y~condition*group),lmerTestType=3)
+sim_treat <- powerSim(model, nsim=1000, test = fixed("condition"),lmerTestType=3)
+###--> to test a fixed effect, use test "fixed" - to test an interaction use "fcompare"
+
+#inspect simulation
+sim_treat
+
+#debugging
+# ps <- lastResult()
+# ps$errors
+#?powerCurve
+
+```
+
+# Power in linear model (task 2.1)
+
+- simulation loop
+
+```{r parameters linear model}
+
+#effect size to test
+a = 0.3  #desired slope - partial correlation of continuous predictor
+
+b = 0.5  #estimated intercept - standardized
+sd = 5  #estimated variability defined by standard deviation -standardized
+nsim = 1000  # numerb of  simulations
+
+pval = numeric(nsim)  #placeholder for the second for loop output
+Nvec = seq(100, 200, by = 10)  #vector for the range of sample sizes to be tested
+power.N = numeric(length(Nvec))   #create placeholder for first for loop output
+
+for (j in 1:length(Nvec)) {
+  N = Nvec[j]  
+  x = seq(1, 10, length = Nvec[j])  #x value length needs to match sample size (Nvec) length
+  
+  for (i in 1:nsim) {   #for this value of N, create random error 1000 times
+    y_det = a + b * x
+    y = rnorm(N, mean = y_det, sd = sd)
+    m = lm(y ~ x)
+    pval[i] = coef(summary(m))["x", "Pr(>|t|)"]  #all the p values for 1000 sims
+    
+  }  #cycle through all N values
+  power.N[j] = sum(pval < 0.05)/nsim  #the proportion of correct p-values (i.e the power)
+}
+
+power.N
+plot(Nvec, power.N)  #need about 120 samples for 80% power
+
+# power for n = 140 participants
+power.N[4]
+
+```
+
+# Power in structural equation model (task 2.2)
+
+- see file:
+  - pwrSEM_model_specification.txt
+  - pwrSEM_parameter_values.xlsx
+-use [shinyapp pwrSEM](https://yilinandrewang.shinyapps.io/pwrSEM/)
+
+# Power in bivaraite latent growth curve model (task 3.2)
+
+- see file:
+  - pwrSEM_GROWTH_model_specification.txt
+  - pwrSEM_GROWTH_parameter_values.xlsx
+-use [shinyapp pwrSEM](https://yilinandrewang.shinyapps.io/pwrSEM/)
+

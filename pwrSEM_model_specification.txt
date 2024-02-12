@@ -1,0 +1,30 @@
+model specification for Emmy Noether Grant 2024 for pwrSEM power caluclation.
+Note, the model is based on a strcutural equation model.
+
+See, "pwrSEM parameter values" for an overview of input parameters
+
+#measurement model
+LC =~ y1 + y2 + y3 + y4 # LC-NE functioning in 4 tasks
+PSY =~ x1 + x2 + x3 + x4 + x5 + x6 # psychopathology by 6 indicators
+
+# regressions
+LC ~ PSY
+
+# factor variances
+LC ~~ LC 
+PSY ~~ PSY
+            
+# manifest variances for X (made equivalent by naming theta1)
+x1 ~~ theta1*x1
+x2 ~~ theta1*x2
+x3 ~~ theta1*x3
+x4 ~~ theta1*x4
+x5 ~~ theta1*x5
+x6 ~~ theta1*x6
+
+# manifest variances for Y (made equivalent by naming theta2)
+y1 ~~ theta2*y1
+y2 ~~ theta2*y2
+y3 ~~ theta2*y3
+y4 ~~ theta2*y4
+          

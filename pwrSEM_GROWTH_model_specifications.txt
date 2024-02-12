@@ -1,0 +1,33 @@
+# model specification for pwrSEM power caluclation.
+# Note, the model is based on a bivariate latent growth model.
+
+# See, "pwrSEM parameter values" for an overview of input parameters
+
+ # Latent growth model
+  i1 =~ ta1 + ta2 + ta3 
+  s1 =~ 0*ta1 + 1*ta2 + 2*ta3
+
+  i2 =~ tb1 + tb2 + tb3 
+  s2 =~ 0*tb1 + 1*tb2 + 2*tb3
+
+  # Time-invariant covariate
+  x ~ s1
+  x ~ s2
+
+  # Residual variances
+  ta1 ~~ ta1
+  ta2 ~~ ta2
+  ta3 ~~ ta3
+  tb1 ~~ tb1
+  tb2 ~~ tb2
+  tb3 ~~ tb3
+      
+# manifest means for X(fixed at zero)
+x1 ~ 0
+x2 ~ 0
+x3 ~ 0
+      
+# manifest means for rja (fixed at zero)
+y1 ~ 0
+y2 ~ 0
+y3 ~ 0

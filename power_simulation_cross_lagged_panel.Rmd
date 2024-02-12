@@ -1,0 +1,112 @@
+---
+title: "power_simulation_cross_lagged_panel"
+author: "Nico Bast"
+date: "`r Sys.Date()`"
+output: 
+  html_document:
+    toc: true
+    toc_float: true
+    number_sections: true
+    theme: cerulean
+    code_folding: hide
+editor_options: 
+  chunk_output_type: console
+---
+
+# Power in a cross-lagged panel model (task 3.1)
+
+Performs a power simulation for random intercept cross-lagged panel models
+- [reference link](https://www.tandfonline.com/doi/full/10.1080/10705511.2022.2122467)
+- [vignette](https://cloud.r-project.org/web/packages/powRICLPM/vignettes/powRICLPM.html)
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+#install.packages("powRICLPM")
+require(powRICLPM) #power simulation
+
+require(progressr) #progress bar during simulation
+require(furrr) #parallel processing
+
+# see: https://cloud.r-project.org/web/packages/powRICLPM/vignettes/powRICLPM.html
+
+# Check how many cores are available and determine a lower number of cores in parallel processing
+parallel_cores<-future::availableCores()-4
+
+```
+
+## 1. Define simulation parameters
+
+- Phi: Standardized autoregressive and cross-lagged effects for the within-unit components of the model. These values are collected in a matrix, with columns representing predictors and rows representing outcomes.
+- within_cor: A correlation for the within-unit components.
+- ICC: The proportion of variance at the between-unit level (relative to the total variance).
+- RI_cor: The correlation between the random intercepts.
+
+If you are unsure if you have specified the Phi matrix as intended, you can use the check_Phi() function to give you a summary of how the effects in your Phi are interpreted.
+
+```{r values}
+
+Phi <- matrix(c(.7, .1, .2, .7), ncol = 2, byrow = T)
+# The .2 refers to our standardized cross-lagged effect of interest
+check_Phi(Phi)
+
+within_cor <- 0.3
+ICC <- 0.5
+RI_cor <- 0.3
+
+```
+## 2. Perform power simulation
+
+```{r sim, warnings=FALSE}
+
+# Plan powRICLPM analysis to run on 1 core less than number of available cores
+plan(multisession, workers = parallel_cores) # For the case of 8 available cores
+
+#power simulation with progress bar
+with_progress({ # Subscribe to progress updates
+
+output <- powRICLPM(
+  
+  target_power = 0.8,
+  
+  search_lower = 100, #sample size min
+  search_upper = 400, #sample size max
+  search_step = 50, # step increase
+  
+  #time_points = c(3, 4, 5),
+  time_points = 5, # timepoints used
+  
+  #taken from parameter definition above
+  ICC = ICC,
+  RI_cor = RI_cor, 
+  Phi = Phi,
+  
+  within_cor = 0.3, #default medium size
+  
+  reps = 500 #number of monte carlo simulations
+  
+)
+
+})
+
+# Revert back to sequential execution of code 
+plan(sequential)
+
+```
+## 3. inspect output
+
+```{r output}
+
+output
+
+summary(output)
+
+# cross-lagged effect in different simulations
+summary(output, parameter = "wB2~wA1") 
+plot(output, parameter = "wB2~wA1")
+
+```
+
+# Power in linear mixed model (task 1.1)
+
+
